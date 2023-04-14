@@ -1,51 +1,103 @@
-use sqlx::{postgres, Connection};
+use dotenv;
+use sqlx::{postgres, Connection, PgConnection};
 mod objects;
+use structopt::StructOpt;
+
+#[derive(StructOpt)]
+struct Args {
+    #[structopt(subcommand)]
+    cmd: Option<Command>,
+}
+
+struct AddParams {
+    name: String,
+    age: i32,
+    class: String,
+    race: String,
+}
+
+#[derive(StructOpt)]
+enum Command {
+    Add {
+        name: String,
+        age: i32,
+        class: String,
+        race: String,
+    },
+}
 
 #[tokio::main]
 async fn main() {
-    println!("***** Wyrld *****\n\n");
-
-    let first_character = objects::Character::new(
-        String::from("Jules"),
-        22,
-        String::from("Warrior"),
-        String::from("Human"),
-    );
-
-    let first_monster = objects::Monster::new(String::from("Blork"), String::from("Mud"));
-
-    println!(
-        "First character: {}\nFirst Monster: {}",
-        first_character.name, first_monster.name
-    );
+    let my_path = "./.env";
+    dotenv::from_path(my_path).unwrap();
 
     // DB
-    let mut conn = postgres::PgConnection::connect("postgresql://localhost/postgres")
+    let database_url = dotenv::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let mut conn = postgres::PgConnection::connect(&database_url)
         .await
         .unwrap();
 
-    let query_result = sqlx::query(
+    // read args
+    let args = Args::from_args_safe().unwrap();
+
+    match args.cmd {
+        Some(Command::Add {
+            name,
+            age,
+            class,
+            race,
+        }) => {
+            let params = AddParams {
+                name,
+                age,
+                class,
+                race,
+            };
+
+            println!("Creating new character");
+            add_character(&mut conn, params).await
+        }
+
+        None => list_characters(&mut conn).await,
+    }
+
+    // write
+
+    // let write_monster_query =
+    //     sqlx::query("insert into monster (name, kind, hp) values ($1,$2,$3);")
+    //         .bind(first_monster.name)
+    //         .bind(first_monster.kind)
+    //         .bind(first_monster.hp)
+    //         .execute(&mut conn)
+    //         .await
+    //         .unwrap();
+    // println!("query result: {:?}", write_monster_query);
+}
+
+async fn list_characters(pool: &mut PgConnection) {
+    // read
+    let characters = sqlx::query!("select * from character;")
+        .fetch_all(pool)
+        .await
+        .unwrap();
+    for character in characters {
+        println!("{:?}", character);
+    }
+}
+
+async fn add_character(pool: &mut PgConnection, params: AddParams) {
+    let new_character = objects::Character::new(params.name, params.age, params.class, params.race);
+    let write_character_query = sqlx::query(
         "insert into character (name, age, class, race, hp, exp) values ($1,$2,$3,$4,$5,$6);",
     )
-    .bind(first_character.name)
-    .bind(first_character.age)
-    .bind(first_character.class)
-    .bind(first_character.race)
-    .bind(first_character.hp)
-    .bind(first_character.exp)
-    .execute(&mut conn)
+    .bind(new_character.name)
+    .bind(new_character.age)
+    .bind(new_character.class)
+    .bind(new_character.race)
+    .bind(new_character.hp)
+    .bind(new_character.exp)
+    .execute(pool)
     .await
     .unwrap();
-    println!("query result: {:?}", query_result);
-
-    let query_result = sqlx::query("insert into monster (name, kind, hp) values ($1,$2,$3);")
-        .bind(first_monster.name)
-        .bind(first_monster.kind)
-        .bind(first_monster.hp)
-        .execute(&mut conn)
-        .await
-        .unwrap();
-    println!("query result: {:?}", query_result);
-
-    println!("**** FINISHED ****")
+    println!("query result: {:?}", write_character_query);
 }
