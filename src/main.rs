@@ -38,5 +38,14 @@ async fn main() {
     .unwrap();
     println!("query result: {:?}", query_result);
 
+    let query_result = sqlx::query("insert into monster (name, kind, hp) values ($1,$2,$3);")
+        .bind(first_monster.name)
+        .bind(first_monster.kind)
+        .bind(first_monster.hp)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    println!("query result: {:?}", query_result);
+
     println!("**** FINISHED ****")
 }
